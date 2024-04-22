@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react'
-import { Artifact, Contract, Argument, Network, ElectrumNetworkProvider, Utxo } from 'cashscript'
+import { Artifact, Argument, Network, ElectrumNetworkProvider, Utxo } from 'cashscript'
+import { ChronikNetworkProvider, Contract } from '@samrock5000/cashscript';
 import { InputGroup, Form, Button } from 'react-bootstrap'
 // import { QRFunc } from 'react-qrbtf'
 import { readAsType } from './shared'
 import CopyText from './shared/CopyText'
 import InfoUtxos from './InfoUtxos'
+import { ChronikClient } from 'chronik-client';
 
 interface Props {
   artifact?: Artifact
   contract?: Contract
   setContract: (contract?: Contract) => void
-  network: Network
+  network: Network | "ecash"
   setNetwork: (network: Network) => void
   setShowWallets: (showWallets: boolean) => void
   utxos: Utxo[] | undefined
@@ -59,10 +61,7 @@ const ContractCreation: React.FC<Props> = ({ artifact, contract, setContract, ne
         setNetwork(event.target.value as Network)
       }}
     >
-      <option>mainnet</option>
-      <option>testnet3</option>
-      <option>testnet4</option>
-      <option>chipnet</option>
+      <option>ecash</option>
     </Form.Control>
   )
 
@@ -80,8 +79,17 @@ const ContractCreation: React.FC<Props> = ({ artifact, contract, setContract, ne
   function createContract() {
     if (!artifact) return
     try {
-      const provider = new ElectrumNetworkProvider(network)
-      const newContract = new Contract(artifact, args, { provider })
+      let provider
+      if(network === 'ecash') {
+        const chronik = new ChronikClient("https://chronik.be.cash/xec")
+        provider = new ChronikNetworkProvider("mainnet",chronik);
+      }else {
+        provider = new ElectrumNetworkProvider(network)
+      }
+      console.log("🚀 ~ createContract ~ args:", args)
+
+      //@ts-ignore
+      const newContract = new Contract(artifact, args, provider)
       setContract(newContract)
     } catch (e: any) {
       alert(e.message)
@@ -108,8 +116,6 @@ const ContractCreation: React.FC<Props> = ({ artifact, contract, setContract, ne
           <div style={{ float: 'left', width: '70%' }}>
             <strong>Contract address (p2sh32)</strong>
             <CopyText>{contract.address}</CopyText>
-            <strong>Contract token address (p2sh32)</strong>
-            <CopyText>{contract.tokenAddress}</CopyText>
             <strong>Contract utxos</strong>
             <p>{utxos?.length} {utxos?.length == 1 ? "utxo" : "utxos"}</p>
             <details  onClick={() => updateUtxosContract()}>

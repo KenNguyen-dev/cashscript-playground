@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { Network, ElectrumNetworkProvider } from 'cashscript'
+import { Network, ElectrumNetworkProvider, FullStackNetworkProvider } from 'cashscript'
 import { ColumnFlex, Wallet } from './shared'
 import { Button, Card } from 'react-bootstrap'
 import {
@@ -11,9 +11,14 @@ import {
   instantiateSha256,
   encodeCashAddress,
   encodePrivateKeyWif,
+  decodeCashAddress
 } from '@bitauth/libauth'
 import CopyText from './shared/CopyText'
 import InfoUtxos from './InfoUtxos'
+import { ChronikClient } from 'chronik-client'
+import { ChronikNetworkProvider, Utxo  } from '@samrock5000/cashscript'
+import cashaddr from 'ecashaddrjs';
+import BCHJS from '@psf/bch-js'
 
 interface Props {
   network: Network
@@ -87,7 +92,14 @@ const WalletInfo: React.FC<Props> = ({network, setShowWallets,  wallets, setWall
       if (localStorageData !== null) {
         const newWallets = JSON.parse(localStorageData);
         for (const wallet of newWallets){
-          const walletUtxos = await new ElectrumNetworkProvider(network).getUtxos(wallet.address);
+          let walletUtxos
+          //@ts-ignore
+          if(network === 'ecash') {
+            const chronik = new ChronikClient("https://chronik.be.cash/xec")
+            walletUtxos = await new ChronikNetworkProvider("mainnet",chronik).getUtxos(wallet.address);
+          }else {
+           walletUtxos = await new ElectrumNetworkProvider(network).getUtxos(wallet.address);
+          }
           wallet.privKey = new Uint8Array(Object.values( wallet.privKey))
           wallet.utxos = walletUtxos
         }
@@ -113,60 +125,71 @@ const WalletInfo: React.FC<Props> = ({network, setShowWallets,  wallets, setWall
   }, [wallets]);
 
   async function updateUtxosWallet (wallet: Wallet, index: number) {
-    const walletUtxos = await new ElectrumNetworkProvider(network).getUtxos(wallet.address);
+    let walletUtxos: Utxo[]
+    //@ts-ignore
+    const chronik = new ChronikClient("https://chronik.be.cash/xec")
+    walletUtxos = await new ChronikNetworkProvider("mainnet",chronik).getUtxos(wallet.address);
     const walletsCopy = [...wallets]
+    //@ts-ignore
     walletsCopy[index].utxos = walletUtxos
     setWallets(walletsCopy)
   }
 
-  const walletList = wallets.map((wallet, index) => (
-    <Card style={{ marginBottom: '10px' }} key={wallet.privKeyHex}>
-      <Card.Header>
-        <input
-          type="text"
-          id="inputName"
-          value={wallet.walletName}
-          onChange={(e) => changeName(e, index)}
-          className="inputName"
-          placeholder="name"
-        />
-        <Button
-          style={{float:"right", marginTop:"2px"}}
-          onClick={() => removeWallet(index)}
-          variant="outline-secondary"
-          size="sm">
-          -
-        </Button>
-      </Card.Header>
-      <Card.Body>
-        <Card.Text style={{overflowWrap:'anywhere'}}>
-          <strong>Pubkey hex: </strong>
-          <CopyText>{wallet.pubKeyHex}</CopyText>
-          <strong>Pubkeyhash hex: </strong>
-          <CopyText>{wallet.pubKeyHashHex}</CopyText>
-          <strong>{network==="mainnet"? "Address:" : "Testnet Address:"}</strong>
-          <CopyText>{network==="mainnet"? wallet.address : wallet.testnetAddress}</CopyText>
-          <strong>{network==="mainnet"? "Token address:" : "Testnet Token Address:"}</strong>
-          <CopyText>{network==="mainnet"? hash160ToCash(wallet.pubKeyHashHex, false, true) : hash160ToCash(wallet.pubKeyHashHex, true, true)}</CopyText>
-          <strong>Wallet utxos</strong>
-          <p>{wallet.utxos?.length} {wallet.utxos?.length == 1 ? "utxo" : "utxos"}</p>
-        </Card.Text>
-        <details>
-          <summary>Show Private Key</summary>
-          <strong>WIF: </strong>
-          <CopyText>{encodePrivateKeyWif(wallet.privKey, network === "mainnet" ? "mainnet" : "testnet")}</CopyText>
-          <strong>Hex: </strong>
-          <CopyText>{wallet.privKeyHex}</CopyText>
-        </details>
-        <details onClick={() => updateUtxosWallet(wallet,index)}>
-          <summary>Show utxos</summary>
-          <div>
-            <InfoUtxos utxos={wallet.utxos}/>
-          </div>
-        </details>
-      </Card.Body>
-    </Card>
-  ))
+  const walletList = wallets.map((wallet, index) => {
+    const { type, hash } = cashaddr.decode(wallet.address, false);
+    const ecashAddress = cashaddr.encode('ecash', type, hash);
+
+    return (
+      <Card style={{ marginBottom: '10px' }} key={wallet.privKeyHex}>
+        <Card.Header>
+          <input
+            type="text"
+            id="inputName"
+            value={wallet.walletName}
+            onChange={(e) => changeName(e, index)}
+            className="inputName"
+            placeholder="name"
+          />
+          <Button
+            style={{float:"right", marginTop:"2px"}}
+            onClick={() => removeWallet(index)}
+            variant="outline-secondary"
+            size="sm">
+            -
+          </Button>
+        </Card.Header>
+        <Card.Body>
+          <Card.Text style={{overflowWrap:'anywhere'}}>
+            <strong>Pubkey hex: </strong>
+            <CopyText>{wallet.pubKeyHex}</CopyText>
+            <strong>Pubkeyhash hex: </strong>
+            <CopyText>{wallet.pubKeyHashHex}</CopyText>
+            <strong>Address:</strong>
+            <CopyText>{wallet.address}</CopyText>
+            <strong>Ecash address:</strong>
+            <CopyText>{ecashAddress}</CopyText>
+            {/* <strong>{network==="mainnet"? "Token address:" : "Testnet Token Address:"}</strong>
+            <CopyText>{hash160ToCash(wallet.pubKeyHashHex, true, true)}</CopyText> */}
+            <strong>Wallet utxos</strong>
+            <p>{wallet.utxos?.length} {wallet.utxos?.length == 1 ? "utxo" : "utxos"}</p>
+          </Card.Text>
+          <details>
+            <summary>Show Private Key</summary>
+            <strong>WIF: </strong>
+            <CopyText>{encodePrivateKeyWif(wallet.privKey, "mainnet" )}</CopyText>
+            <strong>Hex: </strong>
+            <CopyText>{wallet.privKeyHex}</CopyText>
+          </details>
+          <details onClick={() => updateUtxosWallet(wallet,index)}>
+            <summary>Show utxos</summary>
+            <div>
+              <InfoUtxos utxos={wallet.utxos}/>
+            </div>
+          </details>
+        </Card.Body>
+      </Card>
+    )
+  })
 
   return (
     <ColumnFlex

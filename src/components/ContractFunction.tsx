@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { Contract, AbiFunction, Argument, Network, Recipient, SignatureTemplate, ElectrumNetworkProvider, Utxo } from 'cashscript'
+import { AbiFunction, Argument, Network, ElectrumNetworkProvider, SignatureAlgorithm, FullStackNetworkProvider } from 'cashscript'
+import { Contract, SignatureTemplate, Recipient, HashType, ChronikNetworkProvider } from '@samrock5000/cashscript';
+import {
+  binToHex,
+} from '@bitauth/libauth'
 import { Form, InputGroup, Button, Card } from 'react-bootstrap'
 import { readAsType, ExplorerString, Wallet, NamedUtxo } from './shared'
+import { ChronikClient } from 'chronik-client';
+import BCHJS from '@psf/bch-js'
+
 
 interface Props {
   contract?: Contract
@@ -13,7 +20,7 @@ interface Props {
 
 const ContractFunction: React.FC<Props> = ({ contract, abi, network, wallets, updateUtxosContract }) => {
   const [args, setArgs] = useState<Argument[]>([])
-  const [outputs, setOutputs] = useState<Recipient[]>([{ to: '', amount: 0n }])
+  const [outputs, setOutputs] = useState<Recipient[]>([{ to: '', amount: 0 }])
   // transaction inputs, not the same as abi.inputs
   const [inputs, setInputs] = useState<NamedUtxo[]>([{ txid: '', vout: 0, satoshis: 0n, name: ``, isP2pkh: false }])
   const [manualSelection, setManualSelection] = useState<boolean>(false)
@@ -31,13 +38,14 @@ const ContractFunction: React.FC<Props> = ({ contract, abi, network, wallets, up
   useEffect(() => {
     if (!manualSelection) return;
     async function updateUtxos() {
+      const chronik = new ChronikClient("https://chronik.be.cash/xec")
       if (contract === undefined) return
       const utxosContract = await contract.getUtxos()
       console.log(utxosContract)
       const namedUtxosContract: NamedUtxo[] = utxosContract.map((utxo, index) => ({ ...utxo, name: `Contract UTXO ${index}`, isP2pkh: false }))
       let newUtxoList = namedUtxosContract
       for (let i = 0; i < wallets.length; i++) {
-        const utxosWallet = await new ElectrumNetworkProvider(network).getUtxos(wallets[i].address);
+        const utxosWallet = await new ChronikNetworkProvider("mainnet",chronik).getUtxos(wallets[i].address);
         const namedUtxosWallet: NamedUtxo[] = utxosWallet.map((utxo, index) => ({ ...utxo, name: `${wallets[i].walletName} UTXO ${index}`, isP2pkh: true, walletIndex: i }))
         newUtxoList = newUtxoList.concat(namedUtxosWallet)
       }
@@ -51,7 +59,7 @@ const ContractFunction: React.FC<Props> = ({ contract, abi, network, wallets, up
     // if no wallet is selected in select form
     if (isNaN(Number(walletIndex))) argsCopy[i] = ''
     else {
-      argsCopy[i] = new SignatureTemplate(wallets[Number(walletIndex)].privKey);
+      argsCopy[i] = new SignatureTemplate(wallets[Number(walletIndex)].privKey,HashType.SIGHASH_SINGLE, SignatureAlgorithm.SCHNORR);
     }
     setArgs(argsCopy);
   }
@@ -218,7 +226,7 @@ const ContractFunction: React.FC<Props> = ({ contract, abi, network, wallets, up
             onChange={(event) => {
               const outputsCopy = [...outputs]
               const output = outputsCopy[index]
-              output.amount = BigInt(event.target.value)
+              output.amount = Number(event.target.value)
               outputsCopy[index] = output
               setOutputs(outputsCopy)
             }}
@@ -276,16 +284,19 @@ const ContractFunction: React.FC<Props> = ({ contract, abi, network, wallets, up
         transaction.from(contractInputs)
         p2pkhInputs.forEach(p2pkhInput => {
           if(p2pkhInput !== undefined && p2pkhInput.walletIndex !== undefined){
-            transaction.fromP2PKH(p2pkhInput, new SignatureTemplate(wallets[p2pkhInput.walletIndex].privKey))
+            transaction.experimentalFromP2PKH(p2pkhInput, new SignatureTemplate(wallets[p2pkhInput.walletIndex].privKey))
           }
         })
       }
+      console.log("🚀 ~ sendTransaction ~ transaction:", transaction)
 
+  
       // if noAutomaticChange is enabled, add this to the transaction in construction
-      if (noAutomaticChange) transaction.withoutChange().withoutTokenChange()
+      if (noAutomaticChange) transaction.withoutChange()
       transaction.to(outputs)
-      const { txid } = await transaction.send()
 
+      const { txid } = await transaction.send()
+  
       alert(`Transaction successfully sent: ${ExplorerString[network]}/tx/${txid}`)
       console.log(`Transaction successfully sent: ${ExplorerString[network]}/tx/${txid}`)
       updateUtxosContract()

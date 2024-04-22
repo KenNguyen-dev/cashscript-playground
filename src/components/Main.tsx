@@ -27,7 +27,7 @@ contract TransferWithTimeout(pubkey sender, pubkey recipient, int timeout) {
 `);
 
   const [artifact, setArtifact] = useState<Artifact | undefined>(undefined);
-  const [network, setNetwork] = useState<Network>('chipnet')
+  const [network, setNetwork] = useState<any>('ecash')
   const [showWallets, setShowWallets] = useState<boolean | undefined>(false);
   const [wallets, setWallets] = useState<Wallet[]>([])
 

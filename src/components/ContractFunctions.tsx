@@ -1,5 +1,6 @@
 import React from 'react'
-import { Artifact, Contract, Network } from 'cashscript'
+import { Artifact, Network } from 'cashscript'
+import { Contract } from '@samrock5000/cashscript';
 import ContractFunction from './ContractFunction'
 import { Wallet } from './shared'
 
